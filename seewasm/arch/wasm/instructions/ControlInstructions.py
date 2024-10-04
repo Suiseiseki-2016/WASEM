@@ -21,6 +21,12 @@ TERMINATED_FUNCS = {'__assert_fail', 'runtime.divideByZeroPanic'}
 
 class ControlInstructions:
     def __init__(self, instr_name, instr_operand, instr_string):
+        """
+        Initialize with instruction name, operand, and string.
+        `instr_name` - instruction type (e.g., call, br_if)
+        `instr_operand` - additional data related to the instruction (e.g., branch targets)
+        `instr_string` - full string representation of the instruction.
+        """
         self.instr_name = instr_name
         self.instr_operand = instr_operand
         self.instr_string = instr_string
@@ -38,40 +44,40 @@ class ControlInstructions:
         logging.info(
             f"Call: {readable_internal_func_name(Configuration.get_func_index_to_func_name(), state.current_func_name)} -> {callee_func_name}")
 
-        # step 1
+        # Step 1: Pop arguments for the callee function from the symbolic stack
         num_arg = 0
         if param_str:
             num_arg = len(param_str.split(' '))
             arg = [state.symbolic_stack.pop() for _ in range(num_arg)]
 
-        # step 2
+        # Step 2: Store the current function's context
         state.context_stack.append((state.current_func_name,
                                     state.instr.cur_bb,
                                     [e for e in state.symbolic_stack],
                                     copy.copy(state.local_var),
                                     True if return_str else False))
 
-        # step 3
+        # Step 3: Assign arguments to local variables in the callee function
         for x in range(num_arg):
             state.local_var[num_arg - 1 - x] = arg[x]
-        # set the remaining local vars as None
+        # Clear remaining local variables
         for x in range(num_arg, len(state.local_var)):
             try:
                 state.local_var.pop(x)
             except KeyError:
-                # if some of the local var is unused during the caller
-                # there is no need to pop it, thus continue the loop
+                # If some locals are unused, continue
+                # There is no need to pop it, thus continue the loop
                 continue
 
         state.current_func_name = callee_func_name
 
     def restore_context(self, state):
         """
-        Restore context.
-
-        1. pop an element from stack if require return
-        2. restore the context
-        3. push the element in step 1 into stack
+        Restore the context of the caller function after the callee returns.
+        Steps:
+        1. If necessary, pop the return value from the stack.
+        2. Restore the caller's context (function, block, stack, locals).
+        3. Push the return value back to the stack if required.
         """
         if len(state.context_stack) == 0:
             raise ProcSuccessTermination(0)
@@ -81,30 +87,37 @@ class ControlInstructions:
         logging.info(
             f"Return: {readable_internal_func_name(Configuration.get_func_index_to_func_name(), state.current_func_name)}")
 
-        # step 1
+        # Step 1: Pop the return value if necessary
         if require_return:
             return_val = state.symbolic_stack.pop()
 
-        # step 2
+        # Step 2: Restore the caller function's context
         state.current_func_name = caller_func_name
         state.current_bb_name = cur_bb
         state.symbolic_stack = stack
         state.local_var = local
 
-        # step 3
+        # Step 3: Push the return value back onto the stack if necessary
         if require_return:
             state.symbolic_stack.append(return_val)
 
     def deal_with_call(self, state, f_offset, data_section, analyzer, lvar):
-        # get the callee's function signature
+        """
+        Handle a function call by determining the callee function signature
+        and preparing the appropriate context for the call.
+        """
+        # Get callee's function signature
         target_func = analyzer.func_prototypes[f_offset]
         callee_func_name, param_str, return_str, _ = target_func
 
+        # Get human-readable callee function name
         readable_callee_func_name = readable_internal_func_name(
             Configuration.get_func_index_to_func_name(),
             callee_func_name)
+        
+        # Handle specific modeled functions (like library calls or assertions)
         if Configuration.get_dsl_flag() and readable_callee_func_name.startswith("checker"):
-            # if it is a instrumented function
+            # Handle instrumented functions starting with "checker"
             idx = int(readable_callee_func_name.split('$')[1])
             """
             if idx == -1:
@@ -120,6 +133,7 @@ class ControlInstructions:
             """
             states = [state]
         elif Configuration.get_source_type() == 'c' and is_modeled(readable_callee_func_name, specify_lang='c'):
+            # Handle C library functions
             func = CPredefinedFunction(
                 readable_callee_func_name, state.current_func_name)
             states = log_in_out(
@@ -127,6 +141,7 @@ class ControlInstructions:
                 func.emul)(
                 state, param_str, return_str, data_section, analyzer)
         elif Configuration.get_source_type() == 'go' and is_modeled(readable_callee_func_name, specify_lang='go'):
+            # Handle Go library functions (untested)
             # TODO Go library func modeling is not tested
             func = GoPredefinedFunction(
                 readable_callee_func_name, state.current_func_name)
@@ -135,10 +150,12 @@ class ControlInstructions:
                 func.emul)(
                 state, param_str, return_str, data_section, analyzer)
         elif Configuration.get_source_type() == 'rust' and is_modeled(readable_callee_func_name, specify_lang='rust'):
+            # Handle WASI-imported functions
             # TODO may model some rust library funcs
             pass
         # if the callee is imported (WASI)
         elif is_modeled(readable_callee_func_name, specify_lang='wasi'):
+            # Handle WASI-imported functions
             func = WASIImportFunction(
                 readable_callee_func_name, state.current_func_name)
             states = log_in_out(
@@ -146,24 +163,33 @@ class ControlInstructions:
                 func.emul)(
                 state, param_str, return_str, data_section)
         elif readable_callee_func_name in TERMINATED_FUNCS:
+            # Handle functions that result in termination (like runtime errors)
             logging.info(f"Termination: {readable_callee_func_name}")
             raise ProcFailTermination(ASSERT_FAIL)
         else:
+            # Store the current context and proceed with the function call
             self.store_context(param_str, return_str, state,
                                readable_callee_func_name)
             states = [state]
         return states
 
     def emulate(self, state, data_section, analyzer, lvar):
+        """
+        Main function that handles the emulation of control instructions like
+        `br`, `call`, `if`, `return`, etc.
+        """
+        # Handle instructions that we can skip or terminate early
         if self.instr_name in self.skip_command:
             return [state]
         if self.instr_name in self.term_command:
             return [state]
 
+        # Handle a no-op instruction
         if self.instr_name == 'nop':
             if state.instr.xref:
                 self.restore_context(state)
             return [state]
+        # Handle branch instructions like `br_if`, `if`
         elif self.instr_name == 'br_if' or self.instr_name == 'if':
             op = state.symbolic_stack.pop()
             assert is_bv(op) or is_bool(
@@ -178,6 +204,7 @@ class ControlInstructions:
             # | True    | conditional_true_0  |
             # | BoolRef | both                |
 
+            # Handle true/false or symbolic branch conditions
             if is_true(op):
                 state.edge_type = 'conditional_true_0'
                 states.append(state)

@@ -150,7 +150,6 @@ class ControlInstructions:
                 func.emul)(
                 state, param_str, return_str, data_section, analyzer)
         elif Configuration.get_source_type() == 'rust' and is_modeled(readable_callee_func_name, specify_lang='rust'):
-            # Handle WASI-imported functions
             # TODO may model some rust library funcs
             pass
         # if the callee is imported (WASI)

@@ -4,22 +4,43 @@ from seewasm.arch.wasm.exceptions import UnsupportInstructionError
 from z3 import (UGE, UGT, ULE, ULT, BitVecVal, If, fpEQ, fpGEQ, fpGT, fpLEQ,
                 fpLT, fpNEQ, is_bv, is_false, is_true, simplify)
 
+# Helper map to store bit size information for different types
 helper_map = {
-    'i32': 32,
-    'i64': 64,
-    'f32': [8, 24],
-    'f64': [11, 53]
+    'i32': 32,            # 32-bit integer
+    'i64': 64,            # 64-bit integer
+    'f32': [8, 24],       # 32-bit float (8 exponent bits, 24 mantissa bits)
+    'f64': [11, 53]       # 64-bit float (11 exponent bits, 53 mantissa bits)
 }
 
 
 class LogicalInstructions:
+    """
+    This class emulates WebAssembly logical instructions for both integer and floating-point types.
+    """
     def __init__(self, instr_name, instr_operand, _):
-        self.instr_name = instr_name
-        self.instr_operand = instr_operand
+        """
+        Initialize the logical instruction emulator with the instruction name and operand.
+        :param instr_name: The name of the WebAssembly instruction (e.g., 'eqz', 'ne', etc.)
+        :param instr_operand: The operand for the instruction (unused in this example).
+        :param _: Additional parameters (not used here).
+        """
+        self.instr_name = instr_name  # Instruction name (e.g., 'i32.eqz', 'f64.lt')
+        self.instr_operand = instr_operand  # Operand (not used in this code)
 
     # TODO overflow check in this function?
     def emulate(self, state):
+        """
+        Emulate the logical instruction by modifying the symbolic state.
+        :param state: The current symbolic execution state, containing the symbolic stack.
+        """
+
+        # Function to emulate logical integer instructions
         def do_emulate_logical_int_instruction(state):
+            """
+            Emulate integer logical instructions, such as eqz, lt_s, gt_u, etc.
+            :param state: The current symbolic execution state.
+            :return: The updated state with the result of the logical instruction.
+            """
             instr_type = self.instr_name[:3]
             if 'eqz' in self.instr_name:
                 arg0 = state.symbolic_stack.pop()

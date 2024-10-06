@@ -6,6 +6,8 @@ from seewasm.arch.wasm.configuration import Configuration
 from seewasm.arch.wasm.memory import (insert_symbolic_memory,
                                       lookup_symbolic_memory_data_section)
 
+# A dictionary defining the functions modeled for different languages. 
+# 'c', 'go', 'rust', and 'wasi' represent different language environments.
 MODELED_FUNCS = {
     'c':
     {'__small_printf', 'abs', 'atof', 'atoi', 'exp', 'getchar',
@@ -16,7 +18,7 @@ MODELED_FUNCS = {
       'runtime.slicePanic', 'runtime.sliceToArrayPointerPanic', 'runtime.unsafeSlicePanic', 'runtime.chanMakePanic',
       'runtime.negativeShiftPanic', 'runtime.blockingPanic', 'runtime.calculateHeapAddresses', 'memset', 'runtime.alloc', 'memcpy',
       'syscall/js.valueGet', 'runtime.putchar'},
-    'rust': {},
+    'rust': {},  # Currently no modeled Rust functions
     'wasi':
     {'args_sizes_get', 'args_get', 'environ_sizes_get',
      'fd_advise', 'fd_fdstat_get', 'fd_tell', 'fd_seek',
@@ -25,17 +27,26 @@ MODELED_FUNCS = {
 
 
 def is_modeled(func_name, specify_lang=None):
+    """
+    Check if the function is modeled in the MODELED_FUNCS dictionary.
+    If specify_lang is given, it checks for the function in that specific language.
+    Otherwise, it checks for the function in 'wasi' or in the current source type.
+    """
     if specify_lang:
         return func_name in MODELED_FUNCS[specify_lang]
     else:
+        # Check if the function is in 'wasi' or matches the current configuration's source type
         return func_name in MODELED_FUNCS['wasi'] or func_name in MODELED_FUNCS[Configuration.get_source_type()]
 
 
 def _extract_params(param_str, state):
     """
-    Return a list of elements, which are the arguments of the given import function.
-    Note that, the order will be reversed.
-    For example, if the signature of function foo is: foo (a, b), the returned arguments will be [b, a]
+    Extract the parameters for a given imported function.
+    The parameter string indicates the number of parameters, which are then popped from the symbolic stack.
+    The order of the extracted parameters will be reversed.
+    If a parameter is a bit-vector value (bv_value), it's concretized (converted to a concrete integer value).
+    Otherwise, the symbolic representation is kept.
+    Returns a list of the function's arguments.
     """
     param_cnt = len(param_str.split(" "))
     params = []
@@ -54,6 +65,11 @@ def _extract_params(param_str, state):
 
 
 def _storeN(state, dest, val, len_in_bytes):
+    """
+    Store a value into symbolic memory at the destination address.
+    If the value is not a bit-vector (concrete), it will be converted to a bit-vector using `BitVecVal`.
+    The size of the value is determined by len_in_bytes (converted to bits).
+    """
     if not is_bv(val):
         state.symbolic_memory = insert_symbolic_memory(
             state.symbolic_memory, dest, len_in_bytes,
@@ -64,6 +80,11 @@ def _storeN(state, dest, val, len_in_bytes):
 
 
 def _loadN(state, data_section, dest, len_in_bytes):
+    """
+    Load a value from the symbolic memory, given the destination address and the number of bytes (len_in_bytes).
+    If the loaded value is a bit-vector value, it's converted into a concrete integer.
+    Otherwise, it returns the symbolic value as-is.
+    """
     val = lookup_symbolic_memory_data_section(
         state.symbolic_memory, data_section, dest, len_in_bytes)
     if is_bv_value(val):

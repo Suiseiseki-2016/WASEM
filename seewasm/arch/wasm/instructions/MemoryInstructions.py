@@ -15,11 +15,26 @@ memory_step = 2
 
 class MemoryInstructions:
     def __init__(self, instr_name, instr_operand, instr_string):
+        """
+        Constructor to initialize the memory instruction handler.
+        :param instr_name: Name of the memory instruction (e.g., 'memory.copy', 'load', 'store').
+        :param instr_operand: Operands associated with the instruction.
+        :param instr_string: Full instruction as a string.
+        """
         self.instr_name = instr_name
         self.instr_operand = instr_operand
         self.instr_str = instr_string
 
     def emulate(self, state, data_section):
+        """
+        Emulate memory instructions based on the current instruction name.
+        Handles memory-related instructions like 'memory.copy', 'memory.fill',
+        and load/store operations.
+        
+        :param state: Current program state (e.g., stack, memory).
+        :param data_section: Memory data section to access.
+        :return: Updated state after executing the instruction.
+        """
         global memory_count, memory_step
         if self.instr_name == 'current_memory':
             state.symbolic_stack.append(BitVecVal(memory_count, 32))
@@ -79,6 +94,13 @@ class MemoryInstructions:
 
 
 def load_instr(instr, state, data_section):
+    """
+    Handle load instructions. Load data from memory into the stack.
+    
+    :param instr: The load instruction string.
+    :param state: Current program state (e.g., stack, memory).
+    :param data_section: Memory data section to access.
+    """
     base = state.symbolic_stack.pop()
     # offset maybe int or hex
     try:
@@ -136,6 +158,12 @@ def load_instr(instr, state, data_section):
 
 # deal with store instruction
 def store_instr(instr, state):
+    """
+    Handle store instructions. Store data from the stack into memory.
+    
+    :param instr: The store instruction string.
+    :param state: Current program state (e.g., stack, memory).
+    """
     # offset may be int or hex
     try:
         offset = int(instr.split(' ')[2])
